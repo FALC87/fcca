@@ -1,0 +1,170 @@
+import datetime
+import requests
+from bs4 import BeautifulSoup
+from clint.textui import puts, colored, indent
+from db.mongo import Mongoclient
+from db.mysql import Mysqlclient
+
+class ScrapperMarketAgriculture:
+    total_records = 0
+    inserted_records = 0
+
+    base_url =  'http://www.economia-sniim.gob.mx/nuevo/Consultas/MercadosNacionales/PreciosDeMercado/Agricolas/' 
+    init_urls = [['Frutas y Hortalizas', 'ConsultaFrutasYHortalizas.aspx?SubOpcion=4', 'ResultadosConsultaFechaFrutasYHortalizas.aspx'],]
+
+    def __init__(self, *args, **kwargs):
+        self.is_historic = False
+        #self.mongo = Mongoclient(db_collection='frutas_hortalizas')
+        self.mysql = Mysqlclient(db_table='sniim_frutas_hortalizas_1', db='fcca_1')
+
+    def read_category(self, category, url, url_form):
+        category_page = requests.get(self.base_url + url)
+        category_page = BeautifulSoup(category_page.content, features="html.parser")
+
+        products = [(product.getText(), product['value'], ) for product in category_page.select_one('select#ddlProducto').find_all('option')]
+
+        for product in products:
+            product_name, product_id = product
+            if product_id == '-1':
+                continue
+            #------------------------------------------------------------------------
+            # fcca: para restringir la consulta a ciertos productos
+            # puts(colored.yellow("FCCA Producto: {}".format(str(product_name))))
+            #if 'Acelga' not in product_name:
+            #    continue
+            #------------------------------------------------------------------------
+
+            with indent(4):
+                puts(colored.magenta("Producto: {}".format(str(product_name))))
+
+            '''
+            if self.is_historic:
+                for year in range(1999, 2019):
+                    payload = {
+                        'fechaInicio':'01/01/{0}'.format(str(year)),
+                        'fechaFinal':'01/01/{0}'.format(str(year + 1)),
+                        'ProductoId':product_id,
+                        'ddlProducto':product_id,
+                        'OrigenId':'-1',
+                        'ddlOrigen':'-1',
+                        'Origen':'Todos',
+                        'DestinoId':'-1',
+                        'ddlDestino':'-1',
+                        'Destino':'Todos',
+                        'ddlSemanaSemanal':'1',
+                        'ddlMesSemanal':'Enero',
+                        'ddlAnioSemana':'2023',
+                        'PreciosPorId':'2',
+                        'RegistrosPorPagina':'1000'
+                    }
+
+                    if not self.gather_prices(payload, url_form, product_name):
+                        next
+            else:
+            '''
+            today = datetime.datetime.today()
+            delta = datetime.timedelta(days=1)
+            fecha = today - delta
+            payload = {
+                    'RegistrosPorPagina':'1000',
+                    #'fechaInicio':'06/06/2023',
+                    'fechaInicio':'{}'.format(fecha.strftime('%d/%m/%Y')),
+                    #'fechaFinal': '06/06/2023', 
+                    'fechaFinal': '{}'.format(fecha.strftime('%d/%m/%Y')),
+                    'ProductoId':product_id,
+                    'OrigenId':'-1',
+                    'Origen': 'Todos',
+                    'DestinoId': '-1',
+                    'Destino': 'Todos',
+                    'PreciosPorId' : '1',
+                }
+
+            if not self.gather_prices(payload, url_form, product_name):
+                continue
+
+        return
+
+    def scraping(self):
+        self.total_records = 0
+        self.inserted_records = 0
+
+        for category, url, url_form in self.init_urls:
+            self.read_category(category, url, url_form)
+
+    def gather_prices(self, payload, url_form, product_name):
+        with indent(4):
+            puts(colored.blue("Peticion: {}".format(str(payload))))
+
+        response = requests.get(self.base_url + url_form, params=payload)
+
+        if response.status_code != 200:
+            with indent(4):
+                puts(colored.red("Error en la peticion HTTP: {}".format(str(response.text))))
+            return False
+
+        product_prices = BeautifulSoup(response.content, features="html.parser")
+
+        try:
+            table_prices = product_prices.select_one('table#tblResultados')
+        except Exception as error:
+            with indent(4):
+                puts(colored.red("Error en el parseo: {}".format(str(error))))
+            return False
+
+        fields = ('producto', 'fecha', 'presentacion', 'origen', 'destino', 'precio_min', 'precio_max', 'precio_frec', 'obs')
+        counter_row = 0
+
+        #print(table_prices)
+
+
+        today = datetime.datetime.today()
+        delta = datetime.timedelta(days=1)
+        fecha = today - delta
+
+        for observation in table_prices.find_all('tr'):
+            if counter_row > 1:
+                row = {}
+
+                counter_field = 0
+                row[fields[counter_field]] = str(product_name)
+                counter_field = 1
+                row[fields[counter_field]] = str('{}'.format(fecha.strftime('%d/%m/%Y')))
+                counter_field = 2
+
+                for metric in observation.find_all('td'):
+                    #puts(colored.yellow("FCCA Respuesta: {}".format(str(metric))))
+                    row[fields[counter_field]] = metric.getText()
+                    #print(metric.getText())
+                    counter_field += 1
+                '''
+                with indent(4):
+                    puts(colored.yellow("Insertando: {}".format(str(row))))
+                if self.mongo.insert_one(row):
+                    self.inserted_records += 1
+                    with indent(4):
+                        puts(colored.green("Insertado: {}".format(str(row))))
+                else:
+                    with indent(4):
+                        puts(colored.red("No Insertado: {}".format(str(row))))
+                '''
+
+                #------------------------------
+                # Ingresar datos a MySQL
+                #------------------------------
+                mysql_row = (row['producto'],row['fecha'],row['presentacion'],row['origen'],row['destino'],row['precio_min'],row['precio_max'],row['precio_frec'],row['obs'])
+                if self.mysql.insert_frutas_hortalizas(mysql_row):
+                    with indent(4):
+                        puts(colored.green("Insertado MySQL: {}".format(str(mysql_row))))
+                else:
+                    with indent(4):
+                        puts(colored.red("No Insertado MySQL: {}".format(str(mysql_row))))
+
+            self.total_records += 1
+            counter_row += 1
+
+        return True
+
+if __name__ == '__main__':
+    fyh = ScrapperMarketAgriculture()
+    fyh.scraping()
+
