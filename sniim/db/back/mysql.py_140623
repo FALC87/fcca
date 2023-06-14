@@ -1,6 +1,10 @@
 import os
 from urllib.parse import quote_plus
+#from pymongo import MongoClient
 import mysql.connector
+
+#sys.path.append( '/home/rl/scraper-sniim-master/sniim/scrappers' )
+#from scrappers.agriculture import ScrapperMarketAgriculture
 
 class Mysqlclient:
     def __init__(self, *args, db_table=None, db=None):
