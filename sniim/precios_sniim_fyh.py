@@ -1,4 +1,6 @@
 import datetime
+#from datetime import date
+from dateutil.rrule import rrule, DAILY
 import requests
 from bs4 import BeautifulSoup
 from clint.textui import puts, colored, indent
@@ -8,9 +10,18 @@ import logging
 
 logging.basicConfig(filename='./logs/precios_sniim_fyh.log', level=logging.ERROR,format='%(asctime)s %(levelname)s %(name)s %(message)s')
 logger=logging.getLogger(__name__)
+#today = datetime.datetime.today()
+#delta = datetime.timedelta(days=8)
+#fecha = today - delta
+
+
 today = datetime.datetime.today()
 delta = datetime.timedelta(days=1)
-fecha = today - delta
+fecha_cron = today - delta
+
+a = datetime.date(2023, 5, 2)
+b = datetime.date(2023, 5, 3)
+
 
 class ScrapperMarketAgriculture:
     total_records = 0
@@ -23,7 +34,7 @@ class ScrapperMarketAgriculture:
         self.is_historic = False
         self.mysql = Mysqlclient(db_table='sniim_frutas_hortalizas_1', db='fcca_1')
 
-    def read_category(self, category, url, url_form):
+    def read_category(self, category, url, url_form, fecha):
         category_page = requests.get(self.base_url + url)
         category_page = BeautifulSoup(category_page.content, features="html.parser")
 
@@ -46,10 +57,10 @@ class ScrapperMarketAgriculture:
 
             payload = {
                     'RegistrosPorPagina':'1000',
-                    'fechaInicio':'01/06/2023',
-                    #'fechaInicio':'{}'.format(fecha.strftime('%d/%m/%Y')),
-                    'fechaFinal': '01/06/2023', 
-                    #'fechaFinal': '{}'.format(fecha.strftime('%d/%m/%Y')),
+                    #'fechaInicio':'01/06/2023',
+                    'fechaInicio':'{}'.format(fecha.strftime('%d/%m/%Y')),
+                    #'fechaFinal': '02/06/2023', 
+                    'fechaFinal': '{}'.format(fecha.strftime('%d/%m/%Y')),
                     'ProductoId':product_id,
                     'OrigenId':'-1',
                     'Origen': 'Todos',
@@ -58,7 +69,7 @@ class ScrapperMarketAgriculture:
                     'PreciosPorId' : '1',
                 }
 
-            if not self.gather_prices(payload, url_form, product_name):
+            if not self.gather_prices(payload, url_form, product_name, fecha):
                 continue
 
         return
@@ -67,13 +78,28 @@ class ScrapperMarketAgriculture:
         self.total_records = 0
         self.inserted_records = 0
 
+        #today = datetime.datetime.today()
+        #delta = datetime.timedelta(days=1)
+        #fecha = today - delta
+        #----------------------------
+        # Para carga diaria cron
+        #----------------------------
+        '''
         for category, url, url_form in self.init_urls:
-            self.read_category(category, url, url_form)
+            self.read_category(category, url, url_form, fecha=fecha_cron)
+        '''
 
-        #logger.info('Registros Totales: '    + str(self.total_records))
-        #logger.info('Registros Ingresados: ' + str(self.inserted_records))
+        #----------------------------
+        # Para carga historica
+        #----------------------------
+        #a = datetime.date(2023, 5, 2)
+        #b = datetime.date(2023, 5, 3)
+        for category, url, url_form in self.init_urls:
+            for dt in rrule(DAILY, dtstart=a, until=b):
+                self.read_category(category, url, url_form, fecha=dt) #.strftime("%d/%m/%Y"))
 
-    def gather_prices(self, payload, url_form, product_name):
+
+    def gather_prices(self, payload, url_form, product_name, fecha):
         with indent(4):
             puts(colored.blue("Peticion: {}".format(str(payload))))
             #logger.info("Peticion: {}".format(str(payload)))

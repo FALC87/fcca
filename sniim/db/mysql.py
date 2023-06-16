@@ -4,10 +4,10 @@ import mysql.connector
 
 class Mysqlclient:
     def __init__(self, *args, db_table=None, db=None):
-        self.host = os.environ.get('MYSQL_HOST','0.0.0.0')
+        self.host = os.environ.get('MYSQL_HOST','172.17.0.2')
         self.port = os.environ.get('MYSQL_PORT','3306')
         self.user = os.environ.get('MYSQL_USER','root')
-        self.passw = os.environ.get('MYSQL_PASSW','')
+        self.passw = os.environ.get('MYSQL_PASSW','maiz')
         self.db_table = db_table
         self.db = os.environ.get('MYSQL_DB','fcca_1')
 
