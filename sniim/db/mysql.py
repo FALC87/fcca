@@ -17,17 +17,23 @@ class Mysqlclient:
         if mydb:
             return mydb
 
-    def insert_maiz(self, record):
-        #print(record)
+    def insert_log(self, record):
         db_connection = mysql.connector.connect(host=self.host, user=self.user, password=self.passw, database=self.db)
         db_cursor = db_connection.cursor()
-        #conn = self.connection_mysql()
-        sql = "INSERT INTO sniim_maiz_1 (producto, fecha, origen, destino, precio_min, precio_max, precio_frec, obs) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-        #cursorObject = conn.cursor()
+        sql = "INSERT INTO sniim_log_1 (fecha, producto, registros) VALUES (%s, %s, %s)"
         db_cursor.execute(sql, record)
-        
         db_connection.commit()
         return True
+
+    def insert_maiz(self, record):
+        db_connection = mysql.connector.connect(host=self.host, user=self.user, password=self.passw, database=self.db)
+        db_cursor = db_connection.cursor()
+        sql = "INSERT INTO sniim_maiz_1 (producto, fecha, origen, destino, precio_min, precio_max, precio_frec, obs) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+        db_cursor.execute(sql, record)
+        db_connection.commit()
+        return True
+
+
         #conn.close()
 
         #val = ("Ram", "CSE", "85", "B", "19")

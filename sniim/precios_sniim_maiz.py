@@ -1,9 +1,36 @@
 import datetime
+from dateutil.rrule import rrule, WEEKLY 
 import requests
 from bs4 import BeautifulSoup
 from clint.textui import puts, colored, indent
 from db.mongo import Mongoclient
 from db.mysql import Mysqlclient
+import logging
+import math
+
+logging.basicConfig(filename='./logs/precios_sniim_maiz.log', level=logging.ERROR,format='%(asctime)s %(levelname)s %(name)s %(message)s')
+logger=logging.getLogger(__name__)
+
+#---------------------------------------------------------------------
+# Estas variables se ejecutan en cron cada jueves -1 dia -> miercoles
+today = datetime.datetime.today()
+delta = datetime.timedelta(days=1)
+today = today - delta
+#day  = today.day
+week = int(math.floor(int(today.day)/7)) #today.isocalendar().week
+month= today.month
+year = today.year
+
+#---------------------------------------------------------------------
+# Si requiere carga historica especificar las siguientes variables
+start_date = datetime.date(2023, 4, 1)
+end_date   = datetime.date(2023, 4, 30)
+historical_records = True
+
+# Si se requiere restringir la busqueda a ciertos productos
+product_list = ['Maíz blanco']
+product_all = True
+#--------------------------------------------------------------------
 
 class ScrapperMarketAgriculture:
     total_records = 0
@@ -16,8 +43,9 @@ class ScrapperMarketAgriculture:
         self.is_historic = False
         self.mongo = Mongoclient(db_collection='maiz')
         self.mysql = Mysqlclient(db_table='sniim_maiz_1', db='fcca_1')
+        self.mysql_log = Mysqlclient(db_table='sniim_log_1', db='fcca_1')
 
-    def read_category(self, category, url, url_form):
+    def read_category(self, category, url, url_form, week, month, year):
         category_page = requests.get(self.base_url + url)
         category_page = BeautifulSoup(category_page.content, features="html.parser")
 
@@ -27,22 +55,24 @@ class ScrapperMarketAgriculture:
             product_name, product_id = product
             if product_id == '-1':
                 continue
-            #----------------------------------------------------------------------
-            # fcca: para restringir los productos que se van obtener
-            if 'Maíz' not in product_name:
-                continue
-            #----------------------------------------------------------------------
+            #----------------------------------------
+            if product_all == False:
+                #for p in product_list:
+                #puts(colored.magenta("Producto Validacion: {}".format(str(product_name))))
+                for p in product_list:
+                    if  product_name not in p:
+                        puts(colored.magenta("Producto Validacion: {}".format(str(p))))
+                        continue
+            #----------------------------------------
 
             with indent(4):
                 puts(colored.magenta("Producto: {}".format(str(product_name))))
 
-            today = datetime.datetime.today()
-            deleta = datetime.timedelta(days=-1)
             payload = {
                     'RegistrosPorPagina':'1000',
-                    'Semana':'2',
-                    'Mes':'7',
-                    'Anio':'2022',
+                    'Semana': str(week), #'2',
+                    'Mes':    str(month), #'7',
+                    'Anio':   str(year), #'2022',
                     'ProductoId':product_id,
                     'OrigenId':'-1',
                     'DestinoId':'-1',
@@ -57,8 +87,22 @@ class ScrapperMarketAgriculture:
         self.total_records = 0
         self.inserted_records = 0
 
-        for category, url, url_form in self.init_urls:
-            self.read_category(category, url, url_form)
+        if historical_records:
+            for category, url, url_form in self.init_urls:
+                week = 0
+                for dt in rrule(WEEKLY, dtstart=start_date, until=end_date,  byweekday=2):
+                    #if int(dt.day) >= 7:
+                    puts(colored.blue(str(dt)))
+                    puts(colored.blue(str(dt.day)))
+                    #week = int(math.floor(int(dt.day)/7)) 
+                    week = week + 1
+                    puts(colored.blue(str(week)))
+                    month= dt.month
+                    year = dt.year
+                    self.read_category(category, url, url_form, week=week, month=dt.month, year=dt.year)
+        else:
+            for category, url, url_form in self.init_urls:
+                self.read_category(category, url, url_form,  week=week, month=month, year=year)
 
     def gather_prices(self, payload, url_form, product_name):
         with indent(4):
@@ -98,9 +142,11 @@ class ScrapperMarketAgriculture:
                     #print(metric.getText())
                     counter_field += 1
 
+                #------------------------------
+                # Ingresar datos a Mongo
+                #------------------------------
                 with indent(4):
                     puts(colored.yellow("Insertando: {}".format(str(row))))
-
                 if self.mongo.insert_one(row):
                     self.inserted_records += 1
                     with indent(4):
@@ -124,10 +170,12 @@ class ScrapperMarketAgriculture:
 
             self.total_records += 1
             counter_row += 1
+            
+        mysql_row_log = (datetime.datetime.today(), product_name, self.total_records)
+        self.mysql_log.insert_log(mysql_row_log)
 
         return True
 
 if __name__ == '__main__':
     maiz = ScrapperMarketAgriculture()
     maiz.scraping()
-

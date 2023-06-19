@@ -1,43 +1,50 @@
 import datetime
-#from datetime import date
-from dateutil.rrule import rrule, DAILY
+from dateutil.rrule import rrule, WEEKLY 
 import requests
 from bs4 import BeautifulSoup
 from clint.textui import puts, colored, indent
 from db.mongo import Mongoclient
 from db.mysql import Mysqlclient
 import logging
+import math
 
-logging.basicConfig(filename='./logs/precios_sniim_fyh.log', level=logging.ERROR,format='%(asctime)s %(levelname)s %(name)s %(message)s')
+logging.basicConfig(filename='./logs/precios_sniim_maiz.log', level=logging.ERROR,format='%(asctime)s %(levelname)s %(name)s %(message)s')
 logger=logging.getLogger(__name__)
-today = datetime.datetime.today()
-delta = datetime.timedelta(days=3)
-delta_date = today - delta
 
-#--------------------------------------------------------------------
+#---------------------------------------------------------------------
+# Estas variables se ejecutan en cron cada jueves -1 dia -> miercoles
+today = datetime.datetime.today()
+delta = datetime.timedelta(days=1)
+today = today - delta
+#day  = today.day
+week = int(math.floor(int(today.day)/7)) #today.isocalendar().week
+month= today.month
+year = today.year
+
+#---------------------------------------------------------------------
 # Si requiere carga historica especificar las siguientes variables
-start_date = datetime.date(2023, 4, 3)
-end_date   = datetime.date(2023, 4, 4)
+start_date = datetime.date(2023, 5, 1)
+end_date   = datetime.date(2023, 5, 31)
 historical_records = True
 
 # Si se requiere restringir la busqueda a ciertos productos
-product_list = ['Acelga']
+product_list = ['maiz']
 product_all = True
 #--------------------------------------------------------------------
-
 
 class ScrapperMarketAgriculture:
     total_records = 0
     inserted_records = 0
 
     base_url =  'http://www.economia-sniim.gob.mx/nuevo/Consultas/MercadosNacionales/PreciosDeMercado/Agricolas/' 
-    init_urls = [['Frutas y Hortalizas', 'ConsultaFrutasYHortalizas.aspx?SubOpcion=4', 'ResultadosConsultaFechaFrutasYHortalizas.aspx'],]
+    init_urls = [['Maiz', '/ConsultaGranos.aspx?SubOpcion=6', '/ResultadosConsultaFechaGranos.aspx'],]
 
     def __init__(self, *args, **kwargs):
         self.is_historic = False
-        self.mysql = Mysqlclient(db_table='sniim_frutas_hortalizas_1', db='fcca_1')
+        self.mongo = Mongoclient(db_collection='maiz')
+        self.mysql = Mysqlclient(db_table='sniim_maiz_1', db='fcca_1')
 
-    def read_category(self, category, url, url_form, delta_date):
+    def read_category(self, category, url, url_form, week, month, year):
         category_page = requests.get(self.base_url + url)
         category_page = BeautifulSoup(category_page.content, features="html.parser")
 
@@ -47,29 +54,29 @@ class ScrapperMarketAgriculture:
             product_name, product_id = product
             if product_id == '-1':
                 continue
+            #----------------------------------------
             if product_all == False:
                 if product_name not in product_list:
                     continue
+            #----------------------------------------
 
             with indent(4):
                 puts(colored.magenta("Producto: {}".format(str(product_name))))
 
             payload = {
                     'RegistrosPorPagina':'1000',
-                    'fechaInicio':'{}'.format(delta_date.strftime('%d/%m/%Y')),
-                    'fechaFinal': '{}'.format(delta_date.strftime('%d/%m/%Y')),
+                    'Semana': str(week), #'2',
+                    'Mes':    str(month), #'7',
+                    'Anio':   str(year), #'2022',
                     'ProductoId':product_id,
                     'OrigenId':'-1',
-                    'Origen': 'Todos',
-                    'DestinoId': '-1',
-                    'Destino': 'Todos',
-                    'PreciosPorId' : '1',
+                    'DestinoId':'-1',
                 }
 
-            if not self.gather_prices(payload, url_form, product_name, delta_date):
+            if not self.gather_prices(payload, url_form, product_name):
                 continue
-        return
 
+        return
 
     def scraping(self):
         self.total_records = 0
@@ -77,25 +84,28 @@ class ScrapperMarketAgriculture:
 
         if historical_records:
             for category, url, url_form in self.init_urls:
-                for dt in rrule(DAILY, dtstart=start_date, until=end_date):
-                    self.read_category(category, url, url_form, delta_date=dt) 
+                #for dt in rrule(WEEKLY, dtstart=start_date, until=end_date, wkst=4, byweekday=4):
+                for dt in rrule(WEEKLY, dtstart=start_date, until=end_date,  byweekday=2):
+                    #if int(dt.day) >= 7:
+                    puts(colored.blue(str(dt)))
+                    puts(colored.blue(str(dt.day)))
+                    week = int(math.floor(int(dt.day)/7)) 
+                    month= dt.month
+                    year = dt.year
+                    self.read_category(category, url, url_form, week=week, month=dt.month, year=dt.year)
         else:
             for category, url, url_form in self.init_urls:
-                self.read_category(category, url, url_form, delta_date=delta_date)
+                self.read_category(category, url, url_form,  week=week, month=month, year=year)
 
-
-    def gather_prices(self, payload, url_form, product_name, delta_date):
+    def gather_prices(self, payload, url_form, product_name):
         with indent(4):
             puts(colored.blue("Peticion: {}".format(str(payload))))
-            #logger.info("Peticion: {}".format(str(payload)))
 
         response = requests.get(self.base_url + url_form, params=payload)
-        #logger.info('Respuesta HTTP: ' + str(response.text))
 
         if response.status_code != 200:
             with indent(4):
                 puts(colored.red("Error en la peticion HTTP: {}".format(str(response.text))))
-                #logger.info("Error en la peticion HTTP: {}".format(str(response.text)))
             return False
 
         product_prices = BeautifulSoup(response.content, features="html.parser")
@@ -105,12 +115,12 @@ class ScrapperMarketAgriculture:
         except Exception as error:
             with indent(4):
                 puts(colored.red("Error en el parseo: {}".format(str(error))))
-                #logger.info("Error en el parseo: {}".format(str(error)))
             return False
 
-        fields = ('producto', 'fecha', 'presentacion', 'origen', 'destino', 'precio_min', 'precio_max', 'precio_frec', 'obs')
+        fields = ('producto', 'fecha', 'origen', 'destino', 'precio_min', 'precio_max', 'precio_frec', 'obs')
         counter_row = 0
 
+        #print(table_prices)
         for observation in table_prices.find_all('tr'):
             if counter_row > 1:
                 row = {}
@@ -118,17 +128,16 @@ class ScrapperMarketAgriculture:
                 counter_field = 0
                 row[fields[counter_field]] = str(product_name)
                 counter_field = 1
-                row[fields[counter_field]] = str('{}'.format(delta_date.strftime('%d/%m/%Y')))
-                counter_field = 2
 
                 for metric in observation.find_all('td'):
+                    #puts(colored.yellow("FCCA Respuesta: {}".format(str(metric))))
                     row[fields[counter_field]] = metric.getText()
+                    #print(metric.getText())
                     counter_field += 1
 
                 #------------------------------
                 # Ingresar datos a Mongo
                 #------------------------------
-                '''
                 with indent(4):
                     puts(colored.yellow("Insertando: {}".format(str(row))))
                 if self.mongo.insert_one(row):
@@ -138,18 +147,19 @@ class ScrapperMarketAgriculture:
                 else:
                     with indent(4):
                         puts(colored.red("No Insertado: {}".format(str(row))))
-                '''
 
                 #------------------------------
                 # Ingresar datos a MySQL
                 #------------------------------
-                mysql_row = (row['producto'],row['fecha'],row['presentacion'],row['origen'],row['destino'],row['precio_min'],row['precio_max'],row['precio_frec'],row['obs'])
-                if self.mysql.insert_frutas_hortalizas(mysql_row):
+                mysql_row = (row['producto'],row['fecha'],row['origen'],row['destino'],row['precio_min'],row['precio_max'],row['precio_frec'],row['obs'])
+                if self.mysql.insert_maiz(mysql_row):
+                    #self.inserted_records += 1
                     with indent(4):
                         puts(colored.green("Insertado MySQL: {}".format(str(mysql_row))))
                 else:
                     with indent(4):
                         puts(colored.red("No Insertado MySQL: {}".format(str(mysql_row))))
+
 
             self.total_records += 1
             counter_row += 1
@@ -157,6 +167,6 @@ class ScrapperMarketAgriculture:
         return True
 
 if __name__ == '__main__':
-    fyh = ScrapperMarketAgriculture()
-    fyh.scraping()
+    maiz = ScrapperMarketAgriculture()
+    maiz.scraping()
 
