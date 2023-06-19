@@ -10,17 +10,20 @@ import logging
 
 logging.basicConfig(filename='./logs/precios_sniim_fyh.log', level=logging.ERROR,format='%(asctime)s %(levelname)s %(name)s %(message)s')
 logger=logging.getLogger(__name__)
-#today = datetime.datetime.today()
-#delta = datetime.timedelta(days=8)
-#fecha = today - delta
-
-
 today = datetime.datetime.today()
-delta = datetime.timedelta(days=1)
-fecha_cron = today - delta
+delta = datetime.timedelta(days=3)
+delta_date = today - delta
 
-a = datetime.date(2023, 5, 2)
-b = datetime.date(2023, 5, 3)
+#--------------------------------------------------------------------
+# Si requiere carga historica especificar las siguientes variables
+start_date = datetime.date(2023, 5, 2)
+end_date   = datetime.date(2023, 5, 3)
+historical_records = False
+
+# Si se requiere restringir la busqueda a ciertos productos
+product_list = ['Acelga', 'Jitomate']
+product_all = True
+#--------------------------------------------------------------------
 
 
 class ScrapperMarketAgriculture:
@@ -34,33 +37,27 @@ class ScrapperMarketAgriculture:
         self.is_historic = False
         self.mysql = Mysqlclient(db_table='sniim_frutas_hortalizas_1', db='fcca_1')
 
-    def read_category(self, category, url, url_form, fecha):
+    def read_category(self, category, url, url_form, delta_date):
         category_page = requests.get(self.base_url + url)
         category_page = BeautifulSoup(category_page.content, features="html.parser")
 
         products = [(product.getText(), product['value'], ) for product in category_page.select_one('select#ddlProducto').find_all('option')]
 
-
         for product in products:
             product_name, product_id = product
             if product_id == '-1':
                 continue
-            #------------------------------------------------------------------------
-            # fcca: para restringir la consulta a ciertos productos
-            # puts(colored.yellow("FCCA Producto: {}".format(str(product_name))))
-            #if 'Acelga' not in product_name:
-            #    continue
-            #------------------------------------------------------------------------
+            if not product_all:
+                if product_name not in product_list:
+                    continue
 
             with indent(4):
                 puts(colored.magenta("Producto: {}".format(str(product_name))))
 
             payload = {
                     'RegistrosPorPagina':'1000',
-                    #'fechaInicio':'01/06/2023',
-                    'fechaInicio':'{}'.format(fecha.strftime('%d/%m/%Y')),
-                    #'fechaFinal': '02/06/2023', 
-                    'fechaFinal': '{}'.format(fecha.strftime('%d/%m/%Y')),
+                    'fechaInicio':'{}'.format(delta_date.strftime('%d/%m/%Y')),
+                    'fechaFinal': '{}'.format(delta_date.strftime('%d/%m/%Y')),
                     'ProductoId':product_id,
                     'OrigenId':'-1',
                     'Origen': 'Todos',
@@ -69,37 +66,25 @@ class ScrapperMarketAgriculture:
                     'PreciosPorId' : '1',
                 }
 
-            if not self.gather_prices(payload, url_form, product_name, fecha):
+            if not self.gather_prices(payload, url_form, product_name, delta_date):
                 continue
-
         return
+
 
     def scraping(self):
         self.total_records = 0
         self.inserted_records = 0
 
-        #today = datetime.datetime.today()
-        #delta = datetime.timedelta(days=1)
-        #fecha = today - delta
-        #----------------------------
-        # Para carga diaria cron
-        #----------------------------
-        '''
-        for category, url, url_form in self.init_urls:
-            self.read_category(category, url, url_form, fecha=fecha_cron)
-        '''
-
-        #----------------------------
-        # Para carga historica
-        #----------------------------
-        #a = datetime.date(2023, 5, 2)
-        #b = datetime.date(2023, 5, 3)
-        for category, url, url_form in self.init_urls:
-            for dt in rrule(DAILY, dtstart=a, until=b):
-                self.read_category(category, url, url_form, fecha=dt) #.strftime("%d/%m/%Y"))
+        if historical_records:
+            for category, url, url_form in self.init_urls:
+                for dt in rrule(DAILY, dtstart=a, until=b):
+                    self.read_category(category, url, url_form, delta_date=dt) 
+        else:
+            for category, url, url_form in self.init_urls:
+                self.read_category(category, url, url_form, delta_date=delta_date)
 
 
-    def gather_prices(self, payload, url_form, product_name, fecha):
+    def gather_prices(self, payload, url_form, product_name, delta_date):
         with indent(4):
             puts(colored.blue("Peticion: {}".format(str(payload))))
             #logger.info("Peticion: {}".format(str(payload)))
@@ -133,7 +118,7 @@ class ScrapperMarketAgriculture:
                 counter_field = 0
                 row[fields[counter_field]] = str(product_name)
                 counter_field = 1
-                row[fields[counter_field]] = str('{}'.format(fecha.strftime('%d/%m/%Y')))
+                row[fields[counter_field]] = str('{}'.format(delta_date.strftime('%d/%m/%Y')))
                 counter_field = 2
 
                 for metric in observation.find_all('td'):
