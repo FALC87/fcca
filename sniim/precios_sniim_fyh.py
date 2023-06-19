@@ -18,7 +18,7 @@ delta_date = today - delta
 # Si requiere carga historica especificar las siguientes variables
 start_date = datetime.date(2023, 4, 3)
 end_date   = datetime.date(2023, 4, 4)
-historical_records = True
+historical_records = False
 
 # Si se requiere restringir la busqueda a ciertos productos
 product_list = ['Acelga']
@@ -36,6 +36,7 @@ class ScrapperMarketAgriculture:
     def __init__(self, *args, **kwargs):
         self.is_historic = False
         self.mysql = Mysqlclient(db_table='sniim_frutas_hortalizas_1', db='fcca_1')
+        self.mysql_log = Mysqlclient(db_table='sniim_log_1', db='fcca_1')
 
     def read_category(self, category, url, url_form, delta_date):
         category_page = requests.get(self.base_url + url)
@@ -47,9 +48,14 @@ class ScrapperMarketAgriculture:
             product_name, product_id = product
             if product_id == '-1':
                 continue
+
+            #----------------------------------------
             if product_all == False:
-                if product_name not in product_list:
-                    continue
+                for p in product_list:
+                    if  product_name not in p:
+                        puts(colored.magenta("Producto Validacion: {}".format(str(p))))
+                        continue
+            #----------------------------------------
 
             with indent(4):
                 puts(colored.magenta("Producto: {}".format(str(product_name))))
@@ -153,6 +159,9 @@ class ScrapperMarketAgriculture:
 
             self.total_records += 1
             counter_row += 1
+
+        mysql_row_log = (datetime.datetime.today(), product_name, self.total_records)
+        self.mysql_log.insert_log(mysql_row_log)
 
         return True
 
