@@ -24,7 +24,7 @@ year = today.year
 #---------------------------------------------------------------------
 # Si requiere carga historica especificar las siguientes variables
 start_date = datetime.date(2023, 4, 1)
-end_date   = datetime.date(2023, 4, 30)
+end_date   = datetime.date(2023, 4, 15)
 historical_records = True
 
 # Si se requiere restringir la busqueda a ciertos productos
