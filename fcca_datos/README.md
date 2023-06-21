@@ -14,7 +14,7 @@ Requerimientos:
 
 Uso:
 
-usage: precios_sniim.py [-h] {fyh,granos} start_date end_date
+usage: precios_sniim.py [-h] {fyh,granos} start_date end_date \
 Libreria para consulta de precios de productos agriculas FCCA UMICH V.1.1
 positional arguments:
   {fyh,granos}  Producto [fyh: frutas y hortalizas, granos: granos]
