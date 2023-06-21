@@ -1,6 +1,5 @@
 import datetime
 import mysql.connector
-#import logging
 import argparse
 import csv
 
@@ -30,7 +29,6 @@ def get_data(file_name, product, start_date, end_date):
     print('Fecha Final: '   + str(end_date))
     mydb = mysql.connector.connect(host="18.215.228.120",user="fcca_read_1",password="fcca_read_1", port=3011, database="fcca_1")
     mycursor = mydb.cursor()
-    #mycursor.execute("SELECT * FROM "+ str(product) + " WHERE (STR_TO_DATE(fecha, '%d/%m/%Y') BETWEEN '2010-06-28' AND '2010-06-30') ")
     mycursor.execute("SELECT * FROM "+ str(product) + " WHERE (STR_TO_DATE(fecha, '%d/%m/%Y') BETWEEN '" + str(start_date) + "' AND '" + str(end_date) + "') ")
 
     f = open('./data/'+str(file_name)+'_'+str(start_date)+'_'+str(end_date), 'w')
